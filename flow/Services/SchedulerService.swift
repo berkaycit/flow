@@ -42,30 +42,51 @@ final class SchedulerService {
             .appending(path: "Library/LaunchAgents/\(plistLabel).plist")
     }
 
-    private var wrapperScriptURL: URL {
-        URL(fileURLWithPath: projectDir + "/run_digests.sh")
-    }
-
     init() {
         if loadScheduleFromPlist() {
             isScheduled = true
         }
     }
 
-    func install() throws {
-        try ensureWrapperScript()
+    private var inlineScript: String {
+        """
+        cd "\(projectDir)" && \
+        /usr/bin/python3 python-yt-digest/yt_digest.py & \
+        /usr/bin/python3 python-hn-digest/hn_digest.py & \
+        wait
+        """
+    }
 
+    private func userPath() -> String {
+        let home = NSHomeDirectory()
+        return [
+            "\(home)/.local/bin",
+            "/usr/local/bin",
+            "/opt/homebrew/bin",
+            "/usr/bin",
+            "/bin",
+            "/usr/sbin",
+            "/sbin",
+        ].joined(separator: ":")
+    }
+
+    func install() throws {
         let intervals: [[String: Int]] = entries.sorted().map { entry in
             ["Hour": entry.hour, "Minute": entry.minute]
         }
 
         let plist: [String: Any] = [
             "Label": plistLabel,
-            "ProgramArguments": ["/bin/bash", wrapperScriptURL.path(percentEncoded: false)],
+            "ProgramArguments": ["/bin/bash", "-c", inlineScript],
             "StartCalendarInterval": intervals,
             "StandardOutPath": projectDir + "/logs/digest-stdout.log",
             "StandardErrorPath": projectDir + "/logs/digest-stderr.log",
-            "WorkingDirectory": projectDir
+            "WorkingDirectory": projectDir,
+            "EnvironmentVariables": [
+                "PATH": userPath(),
+                "HOME": NSHomeDirectory(),
+                "CLAUDECODE": "",
+            ],
         ]
 
         try FileManager.default.createDirectory(
@@ -109,23 +130,6 @@ final class SchedulerService {
             try uninstall()
             try install()
         }
-    }
-
-    private func ensureWrapperScript() throws {
-        let script = """
-        #!/bin/bash
-        cd "\(projectDir)"
-        /usr/bin/env python3 python-yt-digest/yt_digest.py &
-        /usr/bin/env python3 python-hn-digest/hn_digest.py &
-        wait
-        """
-        try script.write(to: wrapperScriptURL, atomically: true, encoding: .utf8)
-
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/chmod")
-        process.arguments = ["+x", wrapperScriptURL.path(percentEncoded: false)]
-        try process.run()
-        process.waitUntilExit()
     }
 
     @discardableResult
