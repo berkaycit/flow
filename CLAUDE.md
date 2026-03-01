@@ -8,6 +8,7 @@ Flow: macOS digest viewer. YouTube + Hacker News -> Claude CLI triage -> SQLite 
 |------|------|
 | Architecture, data flow, DB schema, key paths | `agent_docs/architecture.md` |
 | Build commands, run scripts, dependencies | `agent_docs/build.md` |
+| LaunchAgent scheduler (cron), plist lifecycle, UI | `agent_docs/scheduler.md` |
 
 ## Rules
 

@@ -1,10 +1,38 @@
 import Foundation
 
+struct ScheduleEntry: Identifiable, Comparable, Hashable {
+    let id = UUID()
+    var hour: Int
+    var minute: Int
+
+    static func < (lhs: ScheduleEntry, rhs: ScheduleEntry) -> Bool {
+        (lhs.hour, lhs.minute) < (rhs.hour, rhs.minute)
+    }
+
+    var displayTime: String {
+        String(format: "%02d:%02d", hour, minute)
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(hour)
+        hasher.combine(minute)
+    }
+
+    static func == (lhs: ScheduleEntry, rhs: ScheduleEntry) -> Bool {
+        lhs.hour == rhs.hour && lhs.minute == rhs.minute
+    }
+}
+
 @Observable
 final class SchedulerService {
     var isScheduled = false
-    var scheduledHour: Int = 9
-    var scheduledMinute: Int = 0
+    var entries: [ScheduleEntry] = SchedulerService.defaultEntries
+
+    static let defaultEntries: [ScheduleEntry] = [
+        ScheduleEntry(hour: 6, minute: 0),
+        ScheduleEntry(hour: 12, minute: 0),
+        ScheduleEntry(hour: 18, minute: 0),
+    ]
 
     private let plistLabel = "com.berkaycit.flow.digest"
     private let projectDir = NSHomeDirectory() + "/Documents/GitHub/utility/flow"
@@ -25,32 +53,29 @@ final class SchedulerService {
     }
 
     func install() throws {
-        // Ensure wrapper script exists
         try ensureWrapperScript()
+
+        let intervals: [[String: Int]] = entries.sorted().map { entry in
+            ["Hour": entry.hour, "Minute": entry.minute]
+        }
 
         let plist: [String: Any] = [
             "Label": plistLabel,
             "ProgramArguments": ["/bin/bash", wrapperScriptURL.path(percentEncoded: false)],
-            "StartCalendarInterval": [
-                "Hour": scheduledHour,
-                "Minute": scheduledMinute
-            ],
+            "StartCalendarInterval": intervals,
             "StandardOutPath": projectDir + "/logs/digest-stdout.log",
             "StandardErrorPath": projectDir + "/logs/digest-stderr.log",
             "WorkingDirectory": projectDir
         ]
 
-        // Create logs dir
         try FileManager.default.createDirectory(
             atPath: projectDir + "/logs",
             withIntermediateDirectories: true
         )
 
-        // Create LaunchAgents dir if needed
         let launchAgentsDir = plistURL.deletingLastPathComponent()
         try FileManager.default.createDirectory(at: launchAgentsDir, withIntermediateDirectories: true)
 
-        // Write plist
         let data = try PropertyListSerialization.data(
             fromPropertyList: plist,
             format: .xml,
@@ -58,7 +83,6 @@ final class SchedulerService {
         )
         try data.write(to: plistURL)
 
-        // Load the agent
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
         process.arguments = ["load", plistURL.path(percentEncoded: false)]
@@ -69,17 +93,22 @@ final class SchedulerService {
     }
 
     func uninstall() throws {
-        // Unload the agent
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
         process.arguments = ["unload", plistURL.path(percentEncoded: false)]
         try process.run()
         process.waitUntilExit()
 
-        // Remove plist
         try? FileManager.default.removeItem(at: plistURL)
-
         isScheduled = false
+    }
+
+    func updateSchedule(with newEntries: [ScheduleEntry]) throws {
+        entries = newEntries.sorted()
+        if isScheduled {
+            try uninstall()
+            try install()
+        }
     }
 
     private func ensureWrapperScript() throws {
@@ -92,7 +121,6 @@ final class SchedulerService {
         """
         try script.write(to: wrapperScriptURL, atomically: true, encoding: .utf8)
 
-        // Make executable
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/chmod")
         process.arguments = ["+x", wrapperScriptURL.path(percentEncoded: false)]
@@ -103,10 +131,25 @@ final class SchedulerService {
     @discardableResult
     private func loadScheduleFromPlist() -> Bool {
         guard let data = try? Data(contentsOf: plistURL),
-              let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
-              let interval = plist["StartCalendarInterval"] as? [String: Int] else { return false }
-        scheduledHour = interval["Hour"] ?? 9
-        scheduledMinute = interval["Minute"] ?? 0
+              let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] else { return false }
+
+        let loaded: [ScheduleEntry]
+
+        if let intervals = plist["StartCalendarInterval"] as? [[String: Int]] {
+            loaded = intervals.compactMap { dict in
+                guard let hour = dict["Hour"], let minute = dict["Minute"] else { return nil }
+                return ScheduleEntry(hour: hour, minute: minute)
+            }
+        } else if let interval = plist["StartCalendarInterval"] as? [String: Int] {
+            let hour = interval["Hour"] ?? 9
+            let minute = interval["Minute"] ?? 0
+            loaded = [ScheduleEntry(hour: hour, minute: minute)]
+        } else {
+            return false
+        }
+
+        guard !loaded.isEmpty else { return false }
+        entries = loaded.sorted()
         return true
     }
 }
