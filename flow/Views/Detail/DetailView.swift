@@ -9,8 +9,10 @@ struct DetailView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     // Header
-                    HStack(alignment: .top) {
-                        PriorityBadge(priority: item.priorityLevel)
+                    HStack(alignment: .center) {
+                        RoundedRectangle(cornerRadius: 1.5)
+                            .fill(item.priorityLevel.color.opacity(0.85))
+                            .frame(width: 3, height: 16)
                         Text(item.priorityLevel.displayName + " Öncelik")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)

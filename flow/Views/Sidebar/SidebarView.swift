@@ -8,12 +8,13 @@ struct SidebarView: View {
 
         VStack(spacing: 0) {
             // Source picker
-            Picker("Source", selection: $vm.selectedSource) {
+            Picker("", selection: $vm.selectedSource) {
                 ForEach(DigestSource.allCases) { source in
                     Label(source.displayName, systemImage: source.iconName)
                         .tag(source)
                 }
             }
+            .labelsHidden()
             .pickerStyle(.segmented)
             .padding()
             .onChange(of: viewModel.selectedSource) {

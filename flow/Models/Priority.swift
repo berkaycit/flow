@@ -17,9 +17,9 @@ enum Priority: String, CaseIterable, Identifiable, Sendable {
 
     var color: Color {
         switch self {
-        case .high: .red
-        case .medium: .yellow
-        case .low: .green
+        case .high: .blue
+        case .medium: .green
+        case .low: .red
         }
     }
 
