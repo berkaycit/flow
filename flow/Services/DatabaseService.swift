@@ -143,7 +143,7 @@ final class DatabaseService: Sendable {
         }
     }
 
-    nonisolated func deleteItems(forDate date: String) throws {
+    nonisolated func deleteData(forDate date: String) throws {
         try dbPool.write { db in
             try db.execute(
                 sql: "DELETE FROM digest_items WHERE digest_date = ?",

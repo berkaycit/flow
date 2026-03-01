@@ -113,9 +113,9 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
     for col, col_type in [("title_tr", "TEXT"), ("summary_en", "TEXT"), ("reason_en", "TEXT")]:
         try:
             conn.execute(f"ALTER TABLE digest_items ADD COLUMN {col} {col_type}")
-            conn.commit()
         except sqlite3.OperationalError:
             pass
+    conn.commit()
 
 
 def insert_item(conn: sqlite3.Connection, item: Dict) -> bool:

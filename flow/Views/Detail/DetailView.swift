@@ -26,7 +26,7 @@ struct DetailView: View {
                     Text(item.displayTitle)
                         .font(.title2.bold())
                         .textSelection(.enabled)
-                    if item.titleTr != nil {
+                    if let titleTr = item.titleTr, !titleTr.isEmpty {
                         Text(item.title)
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
@@ -38,39 +38,8 @@ struct DetailView: View {
 
                     Divider()
 
-                    // Summary (Turkish primary, English below)
-                    if let summary = item.summary, !summary.isEmpty {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Özet")
-                                .font(.headline)
-                            Text(summary)
-                                .font(.body)
-                                .textSelection(.enabled)
-                            if let summaryEn = item.summaryEn, !summaryEn.isEmpty {
-                                Text(summaryEn)
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                                    .textSelection(.enabled)
-                            }
-                        }
-                    }
-
-                    // Reason (Turkish primary, English below)
-                    if let reason = item.reason, !reason.isEmpty {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Neden?")
-                                .font(.headline)
-                            Text(reason)
-                                .font(.body)
-                                .textSelection(.enabled)
-                            if let reasonEn = item.reasonEn, !reasonEn.isEmpty {
-                                Text(reasonEn)
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                                    .textSelection(.enabled)
-                            }
-                        }
-                    }
+                    bilingualSection(label: "Özet", primary: item.summary, secondary: item.summaryEn)
+                    bilingualSection(label: "Neden?", primary: item.reason, secondary: item.reasonEn)
 
                     Divider()
 
@@ -96,6 +65,25 @@ struct DetailView: View {
                     }
                 }
                 .padding(24)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func bilingualSection(label: String, primary: String?, secondary: String?) -> some View {
+        if let primary, !primary.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(label)
+                    .font(.headline)
+                Text(primary)
+                    .font(.body)
+                    .textSelection(.enabled)
+                if let secondary, !secondary.isEmpty {
+                    Text(secondary)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
             }
         }
     }

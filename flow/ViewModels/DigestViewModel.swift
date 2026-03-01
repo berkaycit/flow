@@ -80,7 +80,7 @@ final class DigestViewModel {
     }
 
     func deleteCurrentDate() {
-        try? db.deleteItems(forDate: selectedDateString)
+        try? db.deleteData(forDate: selectedDateString)
         selectedItem = nil
     }
 
