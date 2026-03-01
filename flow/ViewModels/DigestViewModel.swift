@@ -7,6 +7,7 @@ final class DigestViewModel {
     var selectedDate: Date = .now
     var selectedItem: DigestItem?
     var items: [DigestItem] = []
+    private(set) var itemsById: [Int64: DigestItem] = [:]
     var datesWithContent: Set<String> = []
     var errorMessage: String?
 
@@ -36,10 +37,16 @@ final class DigestViewModel {
         itemsCancellable = observation.start(in: db.dbPool, onError: { [weak self] (error: any Error) in
             self?.errorMessage = error.localizedDescription
         }, onChange: { [weak self] (items: [DigestItem]) in
-            self?.items = items
+            guard let self else { return }
+            self.items = items
+            var byId: [Int64: DigestItem] = Dictionary(minimumCapacity: items.count)
+            for item in items {
+                if let id = item.id { byId[id] = item }
+            }
+            self.itemsById = byId
             // Keep selectedItem in sync with updated data
-            if let selectedId = self?.selectedItem?.id {
-                self?.selectedItem = items.first { $0.id == selectedId }
+            if let selectedId = self.selectedItem?.id {
+                self.selectedItem = byId[selectedId]
             }
         })
     }
@@ -84,7 +91,5 @@ final class DigestViewModel {
         selectedItem = nil
     }
 
-    func dateHasContent(_ date: Date) -> Bool {
-        datesWithContent.contains(DatabaseService.dateFormatter.string(from: date))
-    }
+
 }

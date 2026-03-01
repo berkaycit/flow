@@ -4,9 +4,11 @@ struct CalendarView: View {
     @Environment(DigestViewModel.self) private var viewModel
 
     @State private var displayedMonth: Date = .now
+    @State private var cachedDays: [Date?] = []
 
     private let calendar = Calendar.current
     private let daySymbols = Calendar.current.shortWeekdaySymbols
+    private static let gridColumns = Array(repeating: GridItem(.flexible()), count: 7)
 
     var body: some View {
         VStack(spacing: 8) {
@@ -36,7 +38,7 @@ struct CalendarView: View {
             .padding(.horizontal)
 
             // Day headers
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 4) {
+            LazyVGrid(columns: Self.gridColumns, spacing: 4) {
                 ForEach(daySymbols, id: \.self) { symbol in
                     Text(symbol)
                         .font(.caption2)
@@ -45,13 +47,15 @@ struct CalendarView: View {
                 }
 
                 // Day cells
-                ForEach(Array(daysInMonth.enumerated()), id: \.offset) { _, day in
+                ForEach(Array(cachedDays.enumerated()), id: \.offset) { _, day in
                     if let day {
                         DayCell(
                             date: day,
                             isSelected: calendar.isDate(day, inSameDayAs: viewModel.selectedDate),
                             isToday: calendar.isDateInToday(day),
-                            hasContent: viewModel.dateHasContent(day)
+                            hasContent: viewModel.datesWithContent.contains(
+                                DatabaseService.dateFormatter.string(from: day)
+                            )
                         )
                         .onTapGesture {
                             viewModel.selectDate(day)
@@ -65,6 +69,8 @@ struct CalendarView: View {
             .padding(.horizontal, 8)
         }
         .padding(.vertical, 8)
+        .onAppear { cachedDays = computeDaysInMonth() }
+        .onChange(of: displayedMonth) { cachedDays = computeDaysInMonth() }
     }
 
     private static let monthYearFormatter: DateFormatter = {
@@ -77,7 +83,7 @@ struct CalendarView: View {
         Self.monthYearFormatter.string(from: displayedMonth)
     }
 
-    private var daysInMonth: [Date?] {
+    private func computeDaysInMonth() -> [Date?] {
         let comps = calendar.dateComponents([.year, .month], from: displayedMonth)
         guard let firstOfMonth = calendar.date(from: comps),
               let range = calendar.range(of: .day, in: .month, for: firstOfMonth) else {

@@ -1,7 +1,7 @@
 import Foundation
 import GRDB
 
-struct DigestItem: Identifiable, Codable, Sendable, FetchableRecord, PersistableRecord {
+struct DigestItem: Identifiable, Codable, Sendable, Equatable, FetchableRecord, PersistableRecord {
     static let databaseTableName = "digest_items"
 
     var id: Int64?

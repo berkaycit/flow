@@ -161,7 +161,7 @@ final class DatabaseService: Sendable {
     nonisolated func observeItems(
         source: DigestSource,
         date: String
-    ) -> ValueObservation<ValueReducers.Fetch<[DigestItem]>> {
+    ) -> ValueObservation<ValueReducers.RemoveDuplicates<ValueReducers.Fetch<[DigestItem]>>> {
         ValueObservation.tracking { db in
             try DigestItem
                 .filter(DigestItem.CodingKeys.source == source.rawValue)
@@ -169,11 +169,12 @@ final class DatabaseService: Sendable {
                 .order(sql: Self.priorityOrderSQL)
                 .fetchAll(db)
         }
+        .removeDuplicates()
     }
 
     nonisolated func observeDatesWithContent(
         source: DigestSource
-    ) -> ValueObservation<ValueReducers.Fetch<Set<String>>> {
+    ) -> ValueObservation<ValueReducers.RemoveDuplicates<ValueReducers.Fetch<Set<String>>>> {
         ValueObservation.tracking { db in
             let rows = try String.fetchAll(db, sql:
                 "SELECT DISTINCT digest_date FROM digest_items WHERE source = ?",
@@ -181,5 +182,6 @@ final class DatabaseService: Sendable {
             )
             return Set(rows)
         }
+        .removeDuplicates()
     }
 }

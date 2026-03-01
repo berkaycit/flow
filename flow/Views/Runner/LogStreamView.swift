@@ -1,17 +1,16 @@
 import SwiftUI
 
 struct LogStreamView: View {
-    let lines: [String]
+    let lines: [LogLine]
 
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 2) {
-                    ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
-                        Text(line)
+                    ForEach(lines) { line in
+                        Text(line.text)
                             .font(.system(size: 11, design: .monospaced))
                             .textSelection(.enabled)
-                            .id(index)
                     }
                 }
                 .padding(8)
@@ -19,10 +18,15 @@ struct LogStreamView: View {
             }
             .background(Color(nsColor: .textBackgroundColor))
             .onChange(of: lines.count) {
-                if let last = lines.indices.last {
-                    proxy.scrollTo(last, anchor: .bottom)
+                if let last = lines.last {
+                    proxy.scrollTo(last.id, anchor: .bottom)
                 }
             }
         }
     }
+}
+
+struct LogLine: Identifiable {
+    let id: Int
+    let text: String
 }

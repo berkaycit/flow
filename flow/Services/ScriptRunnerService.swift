@@ -3,12 +3,13 @@ import Foundation
 @Observable
 final class ScriptRunnerService {
     var isRunning = false
-    var logLines: [String] = []
+    var logLines: [LogLine] = []
     var ytStatus: RunStatus = .idle
     var hnStatus: RunStatus = .idle
 
     private var processes: [Process] = []
     private let maxLogLines = 1000
+    private var nextLogId = 0
 
     enum RunStatus: Sendable {
         case idle
@@ -40,6 +41,7 @@ final class ScriptRunnerService {
         guard !isRunning else { return }
         isRunning = true
         logLines = []
+        nextLogId = 0
         processes = []
         ytStatus = .running
         hnStatus = .running
@@ -145,9 +147,11 @@ final class ScriptRunnerService {
     }
 
     private func appendLog(_ line: String) {
-        logLines.append(line)
+        let logLine = LogLine(id: nextLogId, text: line)
+        nextLogId += 1
+        logLines.append(logLine)
         if logLines.count > maxLogLines {
-            logLines.removeFirst(logLines.count - maxLogLines)
+            logLines.removeSubrange(0..<(logLines.count - maxLogLines))
         }
     }
 }

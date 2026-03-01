@@ -16,7 +16,7 @@ struct ItemListView: View {
                 List(viewModel.items, selection: Binding(
                     get: { viewModel.selectedItem?.id },
                     set: { id in
-                        if let id, let item = viewModel.items.first(where: { $0.id == id }) {
+                        if let id, let item = viewModel.itemsById[id] {
                             viewModel.selectItem(item)
                         }
                     }
