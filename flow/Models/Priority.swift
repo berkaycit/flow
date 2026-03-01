@@ -9,9 +9,9 @@ enum Priority: String, CaseIterable, Identifiable, Sendable {
 
     var displayName: String {
         switch self {
-        case .high: "High"
-        case .medium: "Medium"
-        case .low: "Low"
+        case .high: "Yüksek"
+        case .medium: "Orta"
+        case .low: "Düşük"
         }
     }
 

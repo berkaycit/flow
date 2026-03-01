@@ -39,10 +39,13 @@ HN_TRIAGE_SCHEMA = json.dumps({
                 "properties": {
                     "object_id": {"type": "string"},
                     "priority": {"type": "string", "enum": ["high", "medium", "low"]},
+                    "title_tr": {"type": "string"},
                     "summary": {"type": "string"},
-                    "reason": {"type": "string"}
+                    "summary_en": {"type": "string"},
+                    "reason": {"type": "string"},
+                    "reason_en": {"type": "string"}
                 },
-                "required": ["object_id", "priority", "summary"]
+                "required": ["object_id", "priority", "title_tr", "summary", "summary_en"]
             }
         }
     },
@@ -100,24 +103,34 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             error_message   TEXT
         );
     """)
+    for col, col_type in [("title_tr", "TEXT"), ("summary_en", "TEXT"), ("reason_en", "TEXT")]:
+        try:
+            conn.execute(f"ALTER TABLE digest_items ADD COLUMN {col} {col_type}")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass
 
 
 def insert_item(conn: sqlite3.Connection, item: Dict) -> bool:
     try:
         cursor = conn.execute("""
             INSERT OR IGNORE INTO digest_items
-                (source, digest_date, external_id, title, url, priority,
-                 summary, reason, points, num_comments, author, hn_url)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (source, digest_date, external_id, title, title_tr, url, priority,
+                 summary, summary_en, reason, reason_en,
+                 points, num_comments, author, hn_url)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             'hn',
             item['digest_date'],
             item['external_id'],
             item['title'],
+            item.get('title_tr'),
             item['url'],
             item['priority'],
             item.get('summary'),
+            item.get('summary_en'),
             item.get('reason'),
+            item.get('reason_en'),
             item.get('points'),
             item.get('num_comments'),
             item.get('author'),
@@ -210,24 +223,29 @@ def extract_article(url: str) -> Optional[str]:
 # ── 3. Build the Claude prompt ────────────────────────────────────────────────
 
 SYSTEM_PROMPT = """\
-Sen bir teknoloji haber analistisin. Asagida Hacker News front page'inden hikayeler ve makale icerikleri var.
+Sen bir teknoloji haber analistisin. Aşağıda Hacker News front page'inden hikayeler ve makale içerikleri var.
 
-Gorevin:
-1. Her hikayeyi onem derecesine gore sinifla: high (Yuksek) / medium (Orta) / low (Dusuk)
-2. high ve medium onemdeki hikayelerin 2-3 cumlelik ozetini yaz (summary alani)
-3. Neden onemli oldugunu kisaca acikla (reason alani)
-4. low onemdekiler icin sadece tek cumle ozet yeter
+Görevin:
+1. Her hikayeyi önem derecesine göre sınıfla: high (Yüksek) / medium (Orta) / low (Düşük)
+2. high ve medium önemdeki hikayelerin 2-3 cümlelik özetini Türkçe yaz (summary alanı)
+3. Aynı özetin İngilizce versiyonunu da yaz (summary_en alanı)
+4. Neden önemli olduğunu Türkçe kısaca açıkla (reason alanı)
+5. Aynı açıklamanın İngilizce versiyonunu da yaz (reason_en alanı)
+6. Hikaye başlığının doğal ve akıcı Türkçe çevirisini yaz (title_tr alanı)
+7. low önemdekiler için sadece tek cümle özet yeter (summary, summary_en ve title_tr yeterli)
 
-Onem kriterleri (kullanicinin ilgi alanlarina gore):
-- Yeni cikan AI teknolojileri, LLM gelismeleri, model release'leri -> high
-- Claude Code, Codex, Gemini CLI ve benzeri AI coding araclari, yeni ozellikleri -> high
+ÖNEMLI: Türkçe metinlerde ö, ü, ç, ğ, ı, ş gibi Türkçe karakterleri doğru şekilde kullan.
+
+Önem kriterleri (kullanıcının ilgi alanlarına göre):
+- Yeni çıkan AI teknolojileri, LLM gelişmeleri, model release'leri -> high
+- Claude Code, Codex, Gemini CLI ve benzeri AI coding araçları, yeni özellikleri -> high
 - Agentic engineering, AI agent framework'leri, tool-use, MCP -> high
-- Oyun gelistirme, game engine'ler, oyun teknolojileri -> high
-- Pratik ve kullanisli GitHub repolari, gelistirici araclari -> medium
-- Diger teknik projeler, kutuphaneler, ilginc hack'ler -> medium
-- Genel haberler, politika, kisisel blog yazilari, nis konular -> low
+- Oyun geliştirme, game engine'ler, oyun teknolojileri -> high
+- Pratik ve kullanışlı GitHub repoları, geliştirici araçları -> medium
+- Diğer teknik projeler, kütüphaneler, ilginç hack'ler -> medium
+- Genel haberler, politika, kişisel blog yazıları, niş konular -> low
 
-Her hikaye icin object_id'yi aynen dondur. JSON schema'ya uy.""".strip()
+Her hikaye için object_id'yi aynen döndür. JSON schema'ya uy.""".strip()
 
 
 def build_prompts(stories: List[Dict]) -> List[str]:
@@ -274,6 +292,11 @@ def build_prompts(stories: List[Dict]) -> List[str]:
 # ── 4. Run Claude CLI for triage (structured output) ─────────────────────────
 
 _CLAUDE_ENV = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
+_CLAUDE_ENV["PATH"] = (
+    os.path.expanduser("~/.local/bin")
+    + os.pathsep
+    + _CLAUDE_ENV.get("PATH", "/usr/bin:/bin")
+)
 
 
 def run_claude_triage(prompt: str) -> dict:
@@ -318,10 +341,13 @@ def process_claude_response(triage_results: List[dict], stories: List[Dict]) -> 
                 "digest_date": str(date.today()),
                 "external_id": oid,
                 "title": meta["title"],
+                "title_tr": tri.get("title_tr"),
                 "url": meta.get("url") or hn_link,
                 "priority": tri["priority"],
                 "summary": tri.get("summary"),
+                "summary_en": tri.get("summary_en"),
                 "reason": tri.get("reason"),
+                "reason_en": tri.get("reason_en"),
                 "points": meta.get("points"),
                 "num_comments": meta.get("num_comments"),
                 "author": meta.get("author"),

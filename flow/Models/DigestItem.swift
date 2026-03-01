@@ -12,7 +12,10 @@ struct DigestItem: Identifiable, Codable, Sendable, FetchableRecord, Persistable
     var url: String
     var priority: String
     var summary: String?
+    var summaryEn: String?
     var reason: String?
+    var reasonEn: String?
+    var titleTr: String?
     // YT-specific
     var channelName: String?
     var channelId: String?
@@ -36,7 +39,10 @@ struct DigestItem: Identifiable, Codable, Sendable, FetchableRecord, Persistable
         case url
         case priority
         case summary
+        case summaryEn = "summary_en"
         case reason
+        case reasonEn = "reason_en"
+        case titleTr = "title_tr"
         case channelName = "channel_name"
         case channelId = "channel_id"
         case publishedAt = "published_at"
@@ -47,6 +53,10 @@ struct DigestItem: Identifiable, Codable, Sendable, FetchableRecord, Persistable
         case isRead = "is_read"
         case isBookmarked = "is_bookmarked"
         case createdAt = "created_at"
+    }
+
+    var displayTitle: String {
+        titleTr ?? title
     }
 
     var digestSource: DigestSource {

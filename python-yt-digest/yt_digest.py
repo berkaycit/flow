@@ -39,10 +39,13 @@ YT_TRIAGE_SCHEMA = json.dumps({
                 "properties": {
                     "video_id": {"type": "string"},
                     "priority": {"type": "string", "enum": ["high", "medium", "low"]},
+                    "title_tr": {"type": "string"},
                     "summary": {"type": "string"},
-                    "reason": {"type": "string"}
+                    "summary_en": {"type": "string"},
+                    "reason": {"type": "string"},
+                    "reason_en": {"type": "string"}
                 },
-                "required": ["video_id", "priority", "summary"]
+                "required": ["video_id", "priority", "title_tr", "summary", "summary_en"]
             }
         }
     },
@@ -107,24 +110,34 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             error_message   TEXT
         );
     """)
+    for col, col_type in [("title_tr", "TEXT"), ("summary_en", "TEXT"), ("reason_en", "TEXT")]:
+        try:
+            conn.execute(f"ALTER TABLE digest_items ADD COLUMN {col} {col_type}")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass
 
 
 def insert_item(conn: sqlite3.Connection, item: Dict) -> bool:
     try:
         cursor = conn.execute("""
             INSERT OR IGNORE INTO digest_items
-                (source, digest_date, external_id, title, url, priority,
-                 summary, reason, channel_name, channel_id, published_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (source, digest_date, external_id, title, title_tr, url, priority,
+                 summary, summary_en, reason, reason_en,
+                 channel_name, channel_id, published_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             'yt',
             item['digest_date'],
             item['external_id'],
             item['title'],
+            item.get('title_tr'),
             item['url'],
             item['priority'],
             item.get('summary'),
+            item.get('summary_en'),
             item.get('reason'),
+            item.get('reason_en'),
             item.get('channel_name'),
             item.get('channel_id'),
             item.get('published_at'),
@@ -219,24 +232,29 @@ def extract_transcript(video_id: str) -> Optional[str]:
 # ── 4. Build the Claude prompt ───────────────────────────────────────────────
 
 SYSTEM_PROMPT = """\
-Sen bir teknoloji YouTube icerik analistisin. Asagida takip edilen YouTube kanallarindan bugun yayinlanan videolar ve transkript ozetleri var.
+Sen bir teknoloji YouTube içerik analistisin. Aşağıda takip edilen YouTube kanallarından bugün yayınlanan videolar ve transkript özetleri var.
 
-Gorevin:
-1. Her videoyu izlenme onceligi ne gore sinifla: high (Izlenmeli) / medium (Belki) / low (Gec)
-2. high ve medium videolarinin 2-3 cumlelik icerik ozetini yaz (summary alani)
-3. Neden izlenmesi gerektigini kisaca acikla (reason alani)
-4. low kategorisindekiler icin sadece tek cumle ozet yeter
+Görevin:
+1. Her videoyu izlenme önceliğine göre sınıfla: high (İzlenmeli) / medium (Belki) / low (Geç)
+2. high ve medium videoların 2-3 cümlelik içerik özetini Türkçe yaz (summary alanı)
+3. Aynı özetin İngilizce versiyonunu da yaz (summary_en alanı)
+4. Neden izlenmesi gerektiğini Türkçe kısaca açıkla (reason alanı)
+5. Aynı açıklamanın İngilizce versiyonunu da yaz (reason_en alanı)
+6. Video başlığının doğal ve akıcı Türkçe çevirisini yaz (title_tr alanı)
+7. low kategorisindekiler için sadece tek cümle özet yeter (summary, summary_en ve title_tr yeterli)
 
-Oncelik kriterleri (kullanicinin ilgi alanlarina gore):
-- Yeni cikan AI teknolojileri, LLM gelismeleri, model release'leri -> high
-- Claude Code, Codex, Gemini CLI ve benzeri AI coding araclari, yeni ozellikleri -> high
+ÖNEMLI: Türkçe metinlerde ö, ü, ç, ğ, ı, ş gibi Türkçe karakterleri doğru şekilde kullan.
+
+Öncelik kriterleri (kullanıcının ilgi alanlarına göre):
+- Yeni çıkan AI teknolojileri, LLM gelişmeleri, model release'leri -> high
+- Claude Code, Codex, Gemini CLI ve benzeri AI coding araçları, yeni özellikleri -> high
 - Agentic engineering, AI agent framework'leri, tool-use, MCP -> high
-- Oyun gelistirme, game engine'ler, oyun teknolojileri -> high
-- Pratik ve kullanisli araclar, framework'ler, teknik egitimler -> medium
-- Diger teknik projeler, genel teknoloji haberleri -> medium
-- Genel sohbet, vlog, nis konular, tekrar icerikler -> low
+- Oyun geliştirme, game engine'ler, oyun teknolojileri -> high
+- Pratik ve kullanışlı araçlar, framework'ler, teknik eğitimler -> medium
+- Diğer teknik projeler, genel teknoloji haberleri -> medium
+- Genel sohbet, vlog, niş konular, tekrar içerikler -> low
 
-Her video icin video_id'yi aynen dondur. JSON schema'ya uy.""".strip()
+Her video için video_id'yi aynen döndür. JSON schema'ya uy.""".strip()
 
 
 def build_prompts(videos: List[Dict]) -> List[str]:
@@ -276,6 +294,11 @@ def build_prompts(videos: List[Dict]) -> List[str]:
 # ── 5. Run Claude CLI for triage (structured output) ────────────────────────
 
 _CLAUDE_ENV = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
+_CLAUDE_ENV["PATH"] = (
+    os.path.expanduser("~/.local/bin")
+    + os.pathsep
+    + _CLAUDE_ENV.get("PATH", "/usr/bin:/bin")
+)
 
 
 def run_claude_triage(prompt: str) -> dict:
@@ -319,10 +342,13 @@ def process_claude_response(triage_results: List[dict], videos: List[Dict]) -> L
                 "digest_date": str(date.today()),
                 "external_id": vid,
                 "title": meta["title"],
+                "title_tr": tri.get("title_tr"),
                 "url": meta["link"],
                 "priority": tri["priority"],
                 "summary": tri.get("summary"),
+                "summary_en": tri.get("summary_en"),
                 "reason": tri.get("reason"),
+                "reason_en": tri.get("reason_en"),
                 "channel_name": meta.get("channel_name"),
                 "channel_id": meta.get("channel_id"),
                 "published_at": meta.get("published"),

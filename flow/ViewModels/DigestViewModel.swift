@@ -33,9 +33,9 @@ final class DigestViewModel {
     private func observeItems() {
         itemsCancellable?.cancel()
         let observation = db.observeItems(source: selectedSource, date: selectedDateString)
-        itemsCancellable = observation.start(in: db.dbPool, onError: { [weak self] error in
+        itemsCancellable = observation.start(in: db.dbPool, onError: { [weak self] (error: any Error) in
             self?.errorMessage = error.localizedDescription
-        }, onChange: { [weak self] items in
+        }, onChange: { [weak self] (items: [DigestItem]) in
             self?.items = items
             // Keep selectedItem in sync with updated data
             if let selectedId = self?.selectedItem?.id {
@@ -47,9 +47,9 @@ final class DigestViewModel {
     private func observeDates() {
         datesCancellable?.cancel()
         let observation = db.observeDatesWithContent(source: selectedSource)
-        datesCancellable = observation.start(in: db.dbPool, onError: { [weak self] error in
+        datesCancellable = observation.start(in: db.dbPool, onError: { [weak self] (error: any Error) in
             self?.errorMessage = error.localizedDescription
-        }, onChange: { [weak self] dates in
+        }, onChange: { [weak self] (dates: Set<String>) in
             self?.datesWithContent = dates
         })
     }
@@ -77,6 +77,11 @@ final class DigestViewModel {
     func toggleBookmark() {
         guard let item = selectedItem, let id = item.id else { return }
         try? db.toggleBookmark(itemId: id)
+    }
+
+    func deleteCurrentDate() {
+        try? db.deleteItems(forDate: selectedDateString)
+        selectedItem = nil
     }
 
     func dateHasContent(_ date: Date) -> Bool {

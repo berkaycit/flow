@@ -14,7 +14,7 @@ struct ItemRowView: View {
                             .fill(.blue)
                             .frame(width: 6, height: 6)
                     }
-                    Text(item.title)
+                    Text(item.displayTitle)
                         .font(.system(size: 13, weight: item.isRead ? .regular : .semibold))
                         .lineLimit(2)
                 }

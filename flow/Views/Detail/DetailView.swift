@@ -11,7 +11,7 @@ struct DetailView: View {
                     // Header
                     HStack(alignment: .top) {
                         PriorityBadge(priority: item.priorityLevel)
-                        Text(item.priorityLevel.displayName + " Priority")
+                        Text(item.priorityLevel.displayName + " Öncelik")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
 
@@ -22,35 +22,53 @@ struct DetailView: View {
                         }
                     }
 
-                    // Title
-                    Text(item.title)
+                    // Title (Turkish primary, English below)
+                    Text(item.displayTitle)
                         .font(.title2.bold())
                         .textSelection(.enabled)
+                    if item.titleTr != nil {
+                        Text(item.title)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
 
                     // Metadata
                     metadataView(item: item)
 
                     Divider()
 
-                    // Summary
+                    // Summary (Turkish primary, English below)
                     if let summary = item.summary, !summary.isEmpty {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Summary")
+                            Text("Özet")
                                 .font(.headline)
                             Text(summary)
                                 .font(.body)
                                 .textSelection(.enabled)
+                            if let summaryEn = item.summaryEn, !summaryEn.isEmpty {
+                                Text(summaryEn)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                    .textSelection(.enabled)
+                            }
                         }
                     }
 
-                    // Reason
+                    // Reason (Turkish primary, English below)
                     if let reason = item.reason, !reason.isEmpty {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Why")
+                            Text("Neden?")
                                 .font(.headline)
                             Text(reason)
                                 .font(.body)
                                 .textSelection(.enabled)
+                            if let reasonEn = item.reasonEn, !reasonEn.isEmpty {
+                                Text(reasonEn)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                    .textSelection(.enabled)
+                            }
                         }
                     }
 
@@ -62,7 +80,7 @@ struct DetailView: View {
                             Button {
                                 openURL(url)
                             } label: {
-                                Label("Open in Browser", systemImage: "safari")
+                                Label("Tarayıcıda Aç", systemImage: "safari")
                             }
                             .buttonStyle(.borderedProminent)
                         }
@@ -71,7 +89,7 @@ struct DetailView: View {
                             Button {
                                 openURL(url)
                             } label: {
-                                Label("HN Discussion", systemImage: "bubble.left.and.bubble.right")
+                                Label("HN Tartışma", systemImage: "bubble.left.and.bubble.right")
                             }
                             .buttonStyle(.bordered)
                         }

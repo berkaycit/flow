@@ -63,6 +63,11 @@ final class DatabaseService: Sendable {
                 )
             """)
         }
+        migrator.registerMigration("v2") { db in
+            try db.execute(sql: "ALTER TABLE digest_items ADD COLUMN title_tr TEXT")
+            try db.execute(sql: "ALTER TABLE digest_items ADD COLUMN summary_en TEXT")
+            try db.execute(sql: "ALTER TABLE digest_items ADD COLUMN reason_en TEXT")
+        }
         return migrator
     }
 
@@ -134,6 +139,19 @@ final class DatabaseService: Sendable {
             try db.execute(
                 sql: "DELETE FROM digest_runs WHERE started_at < ?",
                 arguments: [cutoff]
+            )
+        }
+    }
+
+    nonisolated func deleteItems(forDate date: String) throws {
+        try dbPool.write { db in
+            try db.execute(
+                sql: "DELETE FROM digest_items WHERE digest_date = ?",
+                arguments: [date]
+            )
+            try db.execute(
+                sql: "DELETE FROM digest_runs WHERE date(started_at) = ?",
+                arguments: [date]
             )
         }
     }

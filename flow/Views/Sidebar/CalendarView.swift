@@ -113,7 +113,7 @@ private struct DayCell: View {
         VStack(spacing: 2) {
             Text("\(Calendar.current.component(.day, from: date))")
                 .font(.system(size: 12, weight: isToday ? .bold : .regular))
-                .foregroundStyle(isSelected ? .white : isToday ? .accentColor : .primary)
+                .foregroundStyle(isSelected ? Color.white : isToday ? Color.accentColor : Color.primary)
                 .frame(width: 28, height: 22)
                 .background {
                     if isSelected {
