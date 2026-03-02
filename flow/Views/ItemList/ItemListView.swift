@@ -7,11 +7,19 @@ struct ItemListView: View {
     var body: some View {
         Group {
             if viewModel.items.isEmpty {
-                ContentUnavailableView(
-                    "İçerik Yok",
-                    systemImage: "tray",
-                    description: Text("Bu tarih için içerik bulunamadı.\nDigest scriptlerini çalıştırarak yeni içerik çekin.")
-                )
+                if viewModel.showingNotebooks {
+                    ContentUnavailableView(
+                        "Notebook Yok",
+                        systemImage: "book.closed",
+                        description: Text("Henuz notebook olusturulmamis.")
+                    )
+                } else {
+                    ContentUnavailableView(
+                        "İçerik Yok",
+                        systemImage: "tray",
+                        description: Text("Bu tarih için içerik bulunamadı.\nDigest scriptlerini çalıştırarak yeni içerik çekin.")
+                    )
+                }
             } else {
                 List(viewModel.items, selection: Binding(
                     get: { viewModel.selectedItem?.id },
@@ -29,7 +37,7 @@ struct ItemListView: View {
         }
         .navigationTitle(navigationTitle)
         .toolbar {
-            if !viewModel.items.isEmpty {
+            if !viewModel.showingNotebooks && !viewModel.items.isEmpty {
                 ToolbarItem {
                     Button(role: .destructive) {
                         showingDeleteConfirm = true
@@ -57,6 +65,9 @@ struct ItemListView: View {
     }()
 
     private var navigationTitle: String {
-        Self.titleFormatter.string(from: viewModel.selectedDate)
+        if viewModel.showingNotebooks {
+            return "Notebooks"
+        }
+        return Self.titleFormatter.string(from: viewModel.selectedDate)
     }
 }

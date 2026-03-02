@@ -10,10 +10,12 @@ final class DigestViewModel {
     private(set) var itemsById: [Int64: DigestItem] = [:]
     var datesWithContent: Set<String> = []
     var errorMessage: String?
+    var showingNotebooks: Bool = false
 
     private let db: DatabaseService
     private var itemsCancellable: AnyDatabaseCancellable?
     private var datesCancellable: AnyDatabaseCancellable?
+    private var notebooksCancellable: AnyDatabaseCancellable?
 
     init(db: DatabaseService) {
         self.db = db
@@ -37,18 +39,20 @@ final class DigestViewModel {
         itemsCancellable = observation.start(in: db.dbPool, onError: { [weak self] (error: any Error) in
             self?.errorMessage = error.localizedDescription
         }, onChange: { [weak self] (items: [DigestItem]) in
-            guard let self else { return }
-            self.items = items
-            var byId: [Int64: DigestItem] = Dictionary(minimumCapacity: items.count)
-            for item in items {
-                if let id = item.id { byId[id] = item }
-            }
-            self.itemsById = byId
-            // Keep selectedItem in sync with updated data
-            if let selectedId = self.selectedItem?.id {
-                self.selectedItem = byId[selectedId]
-            }
+            self?.applyItems(items)
         })
+    }
+
+    private func applyItems(_ items: [DigestItem]) {
+        self.items = items
+        var byId: [Int64: DigestItem] = Dictionary(minimumCapacity: items.count)
+        for item in items {
+            if let id = item.id { byId[id] = item }
+        }
+        self.itemsById = byId
+        if let selectedId = self.selectedItem?.id {
+            self.selectedItem = byId[selectedId]
+        }
     }
 
     private func observeDates() {
@@ -62,15 +66,41 @@ final class DigestViewModel {
     }
 
     func sourceChanged() {
+        exitNotebookMode()
         selectedItem = nil
         observeItems()
         observeDates()
     }
 
     func selectDate(_ date: Date) {
+        exitNotebookMode()
         selectedDate = date
         selectedItem = nil
         observeItems()
+    }
+
+    func toggleNotebooks() {
+        showingNotebooks.toggle()
+        selectedItem = nil
+        if showingNotebooks {
+            itemsCancellable?.cancel()
+            itemsCancellable = nil
+            let observation = db.observeNotebookItems()
+            notebooksCancellable = observation.start(in: db.dbPool, onError: { [weak self] (error: any Error) in
+                self?.errorMessage = error.localizedDescription
+            }, onChange: { [weak self] (items: [DigestItem]) in
+                self?.applyItems(items)
+            })
+        } else {
+            exitNotebookMode()
+            observeItems()
+        }
+    }
+
+    private func exitNotebookMode() {
+        showingNotebooks = false
+        notebooksCancellable?.cancel()
+        notebooksCancellable = nil
     }
 
     // MARK: - User Actions

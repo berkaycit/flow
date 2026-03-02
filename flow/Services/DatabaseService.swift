@@ -184,6 +184,18 @@ final class DatabaseService: Sendable {
         .removeDuplicates()
     }
 
+    nonisolated func observeNotebookItems()
+        -> ValueObservation<ValueReducers.RemoveDuplicates<ValueReducers.Fetch<[DigestItem]>>>
+    {
+        ValueObservation.tracking { db in
+            try DigestItem
+                .filter(DigestItem.CodingKeys.notebookUrl != nil)
+                .order(sql: "created_at DESC")
+                .fetchAll(db)
+        }
+        .removeDuplicates()
+    }
+
     nonisolated func observeDatesWithContent(
         source: DigestSource
     ) -> ValueObservation<ValueReducers.RemoveDuplicates<ValueReducers.Fetch<Set<String>>>> {
