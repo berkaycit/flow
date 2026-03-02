@@ -14,6 +14,14 @@ async def main(url: str, title: str) -> None:
         await client.sources.add_url(nb.id, url, wait=True)
 
         print(f"https://notebooklm.google.com/notebook/{nb.id}")
+        sys.stdout.flush()
+
+        # Fire-and-forget: trigger audio overview generation.
+        # The notebook URL is already printed so Swift can open the browser immediately.
+        try:
+            await client.artifacts.generate_audio(nb.id)
+        except Exception:
+            pass  # Non-critical -- notebook is still usable without audio
 
 
 if __name__ == "__main__":

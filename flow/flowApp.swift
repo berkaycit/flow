@@ -41,7 +41,7 @@ struct flowApp: App {
                     let vm = DigestViewModel(db: database)
                     let runner = ScriptRunnerService()
                     let sched = SchedulerService()
-                    let nlm = NotebookLMService()
+                    let nlm = NotebookLMService(db: database)
                     self.db = database
                     self.viewModel = vm
                     self.scriptRunner = runner

@@ -110,7 +110,7 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             error_message   TEXT
         );
     """)
-    for col, col_type in [("title_tr", "TEXT"), ("summary_en", "TEXT"), ("reason_en", "TEXT")]:
+    for col, col_type in [("title_tr", "TEXT"), ("summary_en", "TEXT"), ("reason_en", "TEXT"), ("notebook_url", "TEXT")]:
         try:
             conn.execute(f"ALTER TABLE digest_items ADD COLUMN {col} {col_type}")
         except sqlite3.OperationalError:

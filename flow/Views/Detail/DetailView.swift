@@ -84,7 +84,7 @@ struct DetailView: View {
             notebookLMService.openInNotebookLM(
                 url: url.absoluteString,
                 title: item.displayTitle,
-                source: item.digestSource
+                itemId: item.id!
             )
         } label: {
             if notebookLMService.status.isBusy {

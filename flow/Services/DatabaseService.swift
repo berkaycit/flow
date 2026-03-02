@@ -68,6 +68,9 @@ final class DatabaseService: Sendable {
             try db.execute(sql: "ALTER TABLE digest_items ADD COLUMN summary_en TEXT")
             try db.execute(sql: "ALTER TABLE digest_items ADD COLUMN reason_en TEXT")
         }
+        migrator.registerMigration("v3") { db in
+            try db.execute(sql: "ALTER TABLE digest_items ADD COLUMN notebook_url TEXT")
+        }
         return migrator
     }
 
@@ -118,6 +121,15 @@ final class DatabaseService: Sendable {
             try db.execute(
                 sql: "UPDATE digest_items SET is_bookmarked = CASE WHEN is_bookmarked = 0 THEN 1 ELSE 0 END WHERE id = ?",
                 arguments: [itemId]
+            )
+        }
+    }
+
+    nonisolated func saveNotebookURL(itemId: Int64, url: String) throws {
+        try dbPool.write { db in
+            try db.execute(
+                sql: "UPDATE digest_items SET notebook_url = ? WHERE id = ?",
+                arguments: [url, itemId]
             )
         }
     }

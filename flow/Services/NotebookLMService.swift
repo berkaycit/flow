@@ -4,6 +4,11 @@ import SwiftUI
 @Observable
 final class NotebookLMService {
     var status: Status = .idle
+    private let db: DatabaseService
+
+    init(db: DatabaseService) {
+        self.db = db
+    }
 
     enum Status {
         case idle
@@ -67,15 +72,24 @@ final class NotebookLMService {
         }
     }
 
-    func openInNotebookLM(url: String, title: String, source: DigestSource) {
+    func openInNotebookLM(url: String, title: String, itemId: Int64) {
         guard !status.isBusy else { return }
+
+        if let item = try? db.fetchItem(id: itemId),
+           let notebookUrl = item.notebookUrl,
+           let cachedURL = URL(string: notebookUrl) {
+            NSWorkspace.shared.open(cachedURL)
+            status = .done(notebookURL: notebookUrl)
+            return
+        }
+
         status = .running
 
         let scriptPath = projectDir + "/python-notebooklm/open_in_notebooklm.py"
 
         Task.detached { [self] in
             if await ensureVenv() {
-                await runScript(scriptPath: scriptPath, url: url, title: title)
+                await runScript(scriptPath: scriptPath, url: url, title: title, itemId: itemId)
             }
         }
     }
@@ -124,7 +138,7 @@ final class NotebookLMService {
 
     // MARK: - Script Execution
 
-    nonisolated private func runScript(scriptPath: String, url: String, title: String) async {
+    nonisolated private func runScript(scriptPath: String, url: String, title: String, itemId: Int64) async {
         await MainActor.run { self.status = .running }
 
         let process = Process()
@@ -134,25 +148,29 @@ final class NotebookLMService {
         process.environment = filteredEnv
 
         let stdoutPipe = Pipe()
-        let stderrPipe = Pipe()
         process.standardOutput = stdoutPipe
-        process.standardError = stderrPipe
+        process.standardError = FileHandle.nullDevice
 
         do {
             try process.run()
 
-            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-                process.terminationHandler = { _ in
-                    continuation.resume()
+            // Read the first chunk from stdout (notebook URL) as soon as the script
+            // prints it, without waiting for the process to finish (audio generation
+            // runs after). Empty data means EOF (process closed stdout without output).
+            let notebookURL: String = await withCheckedContinuation { continuation in
+                stdoutPipe.fileHandleForReading.readabilityHandler = { handle in
+                    let data = handle.availableData
+                    handle.readabilityHandler = nil
+                    let line = data.isEmpty
+                        ? ""
+                        : (String(data: data, encoding: .utf8)?
+                            .trimmingCharacters(in: .whitespacesAndNewlines) ?? "")
+                    continuation.resume(returning: line)
                 }
             }
 
-            let exitCode = process.terminationStatus
-
-            if exitCode == 0 {
-                let data = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-                let notebookURL = String(data: data, encoding: .utf8)?
-                    .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if !notebookURL.isEmpty {
+                try? db.saveNotebookURL(itemId: itemId, url: notebookURL)
 
                 await MainActor.run {
                     self.status = .done(notebookURL: notebookURL)
@@ -160,7 +178,18 @@ final class NotebookLMService {
                         NSWorkspace.shared.open(url)
                     }
                 }
-            } else {
+            }
+
+            // Wait for process to finish (audio generation) in the background.
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                process.terminationHandler = { _ in
+                    continuation.resume()
+                }
+            }
+
+            // If stdout was empty, check exit code for auth errors.
+            if notebookURL.isEmpty {
+                let exitCode = process.terminationStatus
                 await MainActor.run {
                     self.status = exitCode == 2 ? .authRequired : .error("Exit code \(exitCode)")
                 }

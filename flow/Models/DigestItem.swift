@@ -28,6 +28,7 @@ struct DigestItem: Identifiable, Codable, Sendable, Equatable, FetchableRecord, 
     // User state
     var isRead: Bool
     var isBookmarked: Bool
+    var notebookUrl: String?
     var createdAt: String
 
     enum CodingKeys: String, CodingKey, ColumnExpression {
@@ -52,6 +53,7 @@ struct DigestItem: Identifiable, Codable, Sendable, Equatable, FetchableRecord, 
         case hnUrl = "hn_url"
         case isRead = "is_read"
         case isBookmarked = "is_bookmarked"
+        case notebookUrl = "notebook_url"
         case createdAt = "created_at"
     }
 
