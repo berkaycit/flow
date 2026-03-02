@@ -28,7 +28,7 @@ final class ScriptRunnerService {
     }
 
     private let projectDir: String = {
-        NSHomeDirectory() + "/Documents/GitHub/utility/flow"
+        NSHomeDirectory() + "/flow"
     }()
 
     private let filteredEnv: [String: String] = {

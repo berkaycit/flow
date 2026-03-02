@@ -35,7 +35,7 @@ final class SchedulerService {
     ]
 
     private let plistLabel = "com.berkaycit.flow.digest"
-    private let projectDir = NSHomeDirectory() + "/Documents/GitHub/utility/flow"
+    private let projectDir = NSHomeDirectory() + "/flow"
 
     private var plistURL: URL {
         FileManager.default.homeDirectoryForCurrentUser
