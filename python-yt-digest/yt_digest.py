@@ -304,7 +304,7 @@ _CLAUDE_ENV["PATH"] = (
 def run_claude_triage(prompt: str) -> dict:
     result = subprocess.run(
         ["claude", "-p",
-         "--model", "sonnet",
+         "--model", "haiku",
          "--output-format", "json",
          "--json-schema", YT_TRIAGE_SCHEMA,
          "--no-session-persistence"],
