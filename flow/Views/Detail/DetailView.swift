@@ -2,6 +2,7 @@ import SwiftUI
 
 struct DetailView: View {
     @Environment(DigestViewModel.self) private var viewModel
+    @Environment(NotebookLMService.self) private var notebookLMService
     @Environment(\.openURL) private var openURL
 
     var body: some View {
@@ -64,10 +65,73 @@ struct DetailView: View {
                             }
                             .buttonStyle(.bordered)
                         }
+
+                        if let itemURL = item.itemURL {
+                            notebookLMButton(url: itemURL, item: item)
+                        }
                     }
+
+                    notebookLMStatusView()
                 }
                 .padding(24)
             }
+        }
+    }
+
+    @ViewBuilder
+    private func notebookLMButton(url: URL, item: DigestItem) -> some View {
+        Button {
+            notebookLMService.openInNotebookLM(
+                url: url.absoluteString,
+                title: item.displayTitle,
+                source: item.digestSource
+            )
+        } label: {
+            if notebookLMService.status.isBusy {
+                ProgressView()
+                    .controlSize(.small)
+                Text(notebookLMService.status.isSettingUp ? "Kuruluyor..." : "NotebookLM")
+            } else {
+                Label("NotebookLM", systemImage: "book.and.wrench.fill")
+            }
+        }
+        .buttonStyle(.bordered)
+        .disabled(notebookLMService.status.isBusy)
+    }
+
+    @ViewBuilder
+    private func notebookLMStatusView() -> some View {
+        switch notebookLMService.status {
+        case .authRequired:
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    Image(systemName: "person.badge.key")
+                        .foregroundStyle(.orange)
+                    Text("Chrome'da notebooklm.google.com adresine giris yapin.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Button("Cookie'leri Oku") {
+                    notebookLMService.login()
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+        case .loggingIn:
+            HStack(spacing: 8) {
+                ProgressView()
+                    .controlSize(.small)
+                Text("Chrome cookie'leri okunuyor...")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        case .error(let msg):
+            Text(msg)
+                .font(.caption)
+                .foregroundStyle(.red)
+                .lineLimit(2)
+        default:
+            EmptyView()
         }
     }
 
