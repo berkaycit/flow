@@ -190,6 +190,29 @@ struct DetailView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+        case .reddit:
+            HStack(spacing: 8) {
+                if let sub = item.channelName {
+                    Label("r/\(sub)", systemImage: "bubble.left.and.text.bubble.right.fill")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                if let points = item.points {
+                    Label("\(points) pts", systemImage: "arrow.up")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                if let comments = item.numComments {
+                    Label("\(comments)", systemImage: "bubble.right")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                if let author = item.author {
+                    Label(author, systemImage: "person")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
         }
     }
 }

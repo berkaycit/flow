@@ -6,6 +6,7 @@ final class ScriptRunnerService {
     var logLines: [LogLine] = []
     var ytStatus: RunStatus = .idle
     var hnStatus: RunStatus = .idle
+    var redditStatus: RunStatus = .idle
 
     private var processes: [Process] = []
     private let maxLogLines = 1000
@@ -37,7 +38,7 @@ final class ScriptRunnerService {
         return env
     }()
 
-    func runBothDigests() {
+    func runAllDigests() {
         guard !isRunning else { return }
         isRunning = true
         logLines = []
@@ -45,11 +46,13 @@ final class ScriptRunnerService {
         processes = []
         ytStatus = .running
         hnStatus = .running
+        redditStatus = .running
 
         Task.detached { [self] in
             await withTaskGroup(of: Void.self) { group in
                 group.addTask { await self.runScript(name: "yt_digest.py", path: "python-yt-digest/yt_digest.py", source: .yt) }
                 group.addTask { await self.runScript(name: "hn_digest.py", path: "python-hn-digest/hn_digest.py", source: .hn) }
+                group.addTask { await self.runScript(name: "reddit_digest.py", path: "python-reddit-digest/reddit_digest.py", source: .reddit) }
             }
             await MainActor.run {
                 self.isRunning = false
@@ -67,6 +70,7 @@ final class ScriptRunnerService {
         isRunning = false
         if case .running = ytStatus { ytStatus = .idle }
         if case .running = hnStatus { hnStatus = .idle }
+        if case .running = redditStatus { redditStatus = .idle }
         appendLog("[Cancelled]")
     }
 
@@ -143,6 +147,7 @@ final class ScriptRunnerService {
         switch source {
         case .yt: ytStatus = status
         case .hn: hnStatus = status
+        case .reddit: redditStatus = status
         }
     }
 

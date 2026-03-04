@@ -71,6 +71,71 @@ final class DatabaseService: Sendable {
         migrator.registerMigration("v3") { db in
             try db.execute(sql: "ALTER TABLE digest_items ADD COLUMN notebook_url TEXT")
         }
+        migrator.registerMigration("v4") { db in
+            // Recreate tables to update CHECK constraint: add 'reddit' source
+            try db.execute(sql: "ALTER TABLE digest_items RENAME TO _digest_items_old")
+            try db.execute(sql: """
+                CREATE TABLE digest_items (
+                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                    source          TEXT NOT NULL CHECK(source IN ('yt', 'hn', 'reddit')),
+                    digest_date     TEXT NOT NULL,
+                    external_id     TEXT NOT NULL,
+                    title           TEXT NOT NULL,
+                    url             TEXT NOT NULL,
+                    priority        TEXT NOT NULL,
+                    summary         TEXT,
+                    reason          TEXT,
+                    channel_name    TEXT,
+                    channel_id      TEXT,
+                    published_at    TEXT,
+                    points          INTEGER,
+                    num_comments    INTEGER,
+                    author          TEXT,
+                    hn_url          TEXT,
+                    is_read         INTEGER NOT NULL DEFAULT 0,
+                    is_bookmarked   INTEGER NOT NULL DEFAULT 0,
+                    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+                    title_tr        TEXT,
+                    summary_en      TEXT,
+                    reason_en       TEXT,
+                    notebook_url    TEXT,
+                    UNIQUE(source, external_id)
+                )
+            """)
+            try db.execute(sql: """
+                INSERT INTO digest_items SELECT
+                    id, source, digest_date, external_id, title, url, priority,
+                    summary, reason, channel_name, channel_id, published_at,
+                    points, num_comments, author, hn_url, is_read, is_bookmarked,
+                    created_at, title_tr, summary_en, reason_en, notebook_url
+                FROM _digest_items_old
+            """)
+            try db.execute(sql: "DROP TABLE _digest_items_old")
+            try db.execute(sql: """
+                CREATE INDEX IF NOT EXISTS idx_items_source_date
+                    ON digest_items(source, digest_date)
+            """)
+            try db.execute(sql: """
+                CREATE INDEX IF NOT EXISTS idx_items_bookmarked
+                    ON digest_items(is_bookmarked) WHERE is_bookmarked = 1
+            """)
+
+            // Migrate digest_runs
+            try db.execute(sql: "ALTER TABLE digest_runs RENAME TO _digest_runs_old")
+            try db.execute(sql: """
+                CREATE TABLE digest_runs (
+                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                    source          TEXT NOT NULL CHECK(source IN ('yt', 'hn', 'reddit')),
+                    started_at      TEXT NOT NULL DEFAULT (datetime('now')),
+                    finished_at     TEXT,
+                    status          TEXT NOT NULL DEFAULT 'running',
+                    items_added     INTEGER DEFAULT 0,
+                    error_message   TEXT
+                )
+            """)
+            try db.execute(sql: "INSERT INTO digest_runs SELECT * FROM _digest_runs_old")
+            try db.execute(sql: "DROP TABLE _digest_runs_old")
+        }
         return migrator
     }
 

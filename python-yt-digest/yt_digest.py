@@ -74,7 +74,7 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS digest_items (
             id              INTEGER PRIMARY KEY AUTOINCREMENT,
-            source          TEXT NOT NULL CHECK(source IN ('yt', 'hn')),
+            source          TEXT NOT NULL CHECK(source IN ('yt', 'hn', 'reddit')),
             digest_date     TEXT NOT NULL,
             external_id     TEXT NOT NULL,
             title           TEXT NOT NULL,
@@ -102,7 +102,7 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
 
         CREATE TABLE IF NOT EXISTS digest_runs (
             id              INTEGER PRIMARY KEY AUTOINCREMENT,
-            source          TEXT NOT NULL CHECK(source IN ('yt', 'hn')),
+            source          TEXT NOT NULL CHECK(source IN ('yt', 'hn', 'reddit')),
             started_at      TEXT NOT NULL DEFAULT (datetime('now')),
             finished_at     TEXT,
             status          TEXT NOT NULL DEFAULT 'running',

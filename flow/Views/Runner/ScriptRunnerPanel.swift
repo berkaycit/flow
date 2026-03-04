@@ -26,6 +26,7 @@ struct ScriptRunnerPanel: View {
             HStack(spacing: 24) {
                 statusBadge(label: "YouTube", status: runner.ytStatus)
                 statusBadge(label: "Hacker News", status: runner.hnStatus)
+                statusBadge(label: "Reddit", status: runner.redditStatus)
             }
             .padding()
 
@@ -45,8 +46,8 @@ struct ScriptRunnerPanel: View {
                     }
                     .buttonStyle(.bordered)
                 } else {
-                    Button("Run Both") {
-                        runner.runBothDigests()
+                    Button("Run All") {
+                        runner.runAllDigests()
                     }
                     .buttonStyle(.borderedProminent)
                 }

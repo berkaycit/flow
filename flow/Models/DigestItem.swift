@@ -86,6 +86,11 @@ struct DigestItem: Identifiable, Codable, Sendable, Equatable, FetchableRecord, 
             let pts = points ?? 0
             let comments = numComments ?? 0
             return "\(pts) pts · \(comments) comments"
+        case .reddit:
+            let sub = channelName ?? ""
+            let pts = points ?? 0
+            let comments = numComments ?? 0
+            return "r/\(sub) · \(pts) pts · \(comments) comments"
         }
     }
 }

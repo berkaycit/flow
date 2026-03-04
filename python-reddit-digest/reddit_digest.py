@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""HN Daily Digest — Hacker News front page triage & summary via Claude CLI.
+"""Reddit Daily Digest — subreddit top posts triage & summary via Claude CLI.
 
-Fetches top HN stories, extracts article content, sends to Claude for triage
+Fetches top Reddit posts from configured subreddits, sends to Claude for triage
 with structured JSON output, and writes results to SQLite
 (~/Library/Application Support/Flow/flow.db).
 """
@@ -12,15 +12,14 @@ import sqlite3
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 import requests
-import trafilatura
 
-HN_API_URL = "http://hn.algolia.com/api/v1/search"
-HN_ITEM_URL = "https://news.ycombinator.com/item?id="
+REDDIT_BASE_URL = "https://www.reddit.com/r/{}/top.json?t=day&limit=25"
+USER_AGENT = "Flow-Digest/1.0"
 MAX_CONTENT_CHARS = 4000
 CHUNK_SIZE = 10
 DB_DIR = Path.home() / "Library" / "Application Support" / "Flow"
@@ -29,7 +28,7 @@ RETENTION_DAYS = 30
 
 # ── JSON Schema for Claude structured output ─────────────────────────────────
 
-HN_TRIAGE_SCHEMA = json.dumps({
+REDDIT_TRIAGE_SCHEMA = json.dumps({
     "type": "object",
     "properties": {
         "items": {
@@ -37,7 +36,7 @@ HN_TRIAGE_SCHEMA = json.dumps({
             "items": {
                 "type": "object",
                 "properties": {
-                    "object_id": {"type": "string"},
+                    "post_id": {"type": "string"},
                     "priority": {"type": "string", "enum": ["high", "medium", "low"]},
                     "title_tr": {"type": "string"},
                     "summary": {"type": "string"},
@@ -45,7 +44,7 @@ HN_TRIAGE_SCHEMA = json.dumps({
                     "reason": {"type": "string"},
                     "reason_en": {"type": "string"}
                 },
-                "required": ["object_id", "priority", "title_tr", "summary", "summary_en"]
+                "required": ["post_id", "priority", "title_tr", "summary", "summary_en"]
             }
         }
     },
@@ -108,7 +107,86 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             conn.execute(f"ALTER TABLE digest_items ADD COLUMN {col} {col_type}")
         except sqlite3.OperationalError:
             pass
+    _migrate_check_constraints(conn)
     conn.commit()
+
+
+def _migrate_check_constraints(conn: sqlite3.Connection) -> None:
+    """Migrate CHECK constraints to include 'reddit' if needed."""
+    cursor = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='digest_items'"
+    )
+    row = cursor.fetchone()
+    if not row or "'reddit'" in row[0]:
+        return
+
+    conn.executescript("""
+        ALTER TABLE digest_items RENAME TO _digest_items_old;
+
+        CREATE TABLE digest_items (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            source          TEXT NOT NULL CHECK(source IN ('yt', 'hn', 'reddit')),
+            digest_date     TEXT NOT NULL,
+            external_id     TEXT NOT NULL,
+            title           TEXT NOT NULL,
+            url             TEXT NOT NULL,
+            priority        TEXT NOT NULL,
+            summary         TEXT,
+            reason          TEXT,
+            channel_name    TEXT,
+            channel_id      TEXT,
+            published_at    TEXT,
+            points          INTEGER,
+            num_comments    INTEGER,
+            author          TEXT,
+            hn_url          TEXT,
+            is_read         INTEGER NOT NULL DEFAULT 0,
+            is_bookmarked   INTEGER NOT NULL DEFAULT 0,
+            created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+            title_tr        TEXT,
+            summary_en      TEXT,
+            reason_en       TEXT,
+            notebook_url    TEXT,
+            UNIQUE(source, external_id)
+        );
+
+        INSERT INTO digest_items SELECT
+            id, source, digest_date, external_id, title, url, priority,
+            summary, reason, channel_name, channel_id, published_at,
+            points, num_comments, author, hn_url, is_read, is_bookmarked,
+            created_at, title_tr, summary_en, reason_en, notebook_url
+        FROM _digest_items_old;
+
+        DROP TABLE _digest_items_old;
+
+        CREATE INDEX IF NOT EXISTS idx_items_source_date
+            ON digest_items(source, digest_date);
+        CREATE INDEX IF NOT EXISTS idx_items_bookmarked
+            ON digest_items(is_bookmarked) WHERE is_bookmarked = 1;
+    """)
+
+    # Also migrate digest_runs
+    cursor2 = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='digest_runs'"
+    )
+    row2 = cursor2.fetchone()
+    if row2 and "'reddit'" not in row2[0]:
+        conn.executescript("""
+            ALTER TABLE digest_runs RENAME TO _digest_runs_old;
+
+            CREATE TABLE digest_runs (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                source          TEXT NOT NULL CHECK(source IN ('yt', 'hn', 'reddit')),
+                started_at      TEXT NOT NULL DEFAULT (datetime('now')),
+                finished_at     TEXT,
+                status          TEXT NOT NULL DEFAULT 'running',
+                items_added     INTEGER DEFAULT 0,
+                error_message   TEXT
+            );
+
+            INSERT INTO digest_runs SELECT * FROM _digest_runs_old;
+            DROP TABLE _digest_runs_old;
+        """)
 
 
 def insert_item(conn: sqlite3.Connection, item: Dict) -> bool:
@@ -117,10 +195,10 @@ def insert_item(conn: sqlite3.Connection, item: Dict) -> bool:
             INSERT OR IGNORE INTO digest_items
                 (source, digest_date, external_id, title, title_tr, url, priority,
                  summary, summary_en, reason, reason_en,
-                 points, num_comments, author, hn_url)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 points, num_comments, author, channel_name, hn_url)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
-            'hn',
+            'reddit',
             item['digest_date'],
             item['external_id'],
             item['title'],
@@ -134,7 +212,8 @@ def insert_item(conn: sqlite3.Connection, item: Dict) -> bool:
             item.get('points'),
             item.get('num_comments'),
             item.get('author'),
-            item.get('hn_url'),
+            item.get('subreddit'),
+            item.get('reddit_url'),
         ))
         return cursor.rowcount > 0
     except sqlite3.Error as e:
@@ -155,83 +234,68 @@ def cleanup_old(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
-# ── 1. Fetch top stories from Algolia HN API ─────────────────────────────────
+# ── 1. Load config ───────────────────────────────────────────────────────────
 
-def fetch_hn_stories() -> List[Dict]:
-    # 1) Front page snapshot
-    front_resp = requests.get(
-        HN_API_URL,
-        params={"tags": "front_page", "hitsPerPage": 30},
-        timeout=15,
-    )
-    front_resp.raise_for_status()
-    front_hits = front_resp.json().get("hits", [])
+def load_subreddits() -> List[str]:
+    config_path = Path(__file__).parent / "subreddits.json"
+    with open(config_path) as f:
+        return json.load(f)["subreddits"]
 
-    # 2) Today's stories (all points, sorted by relevance)
-    start_of_today = int(datetime.combine(date.today(), datetime.min.time()).timestamp())
-    today_resp = requests.get(
-        HN_API_URL,
-        params={
-            "tags": "story",
-            "numericFilters": "created_at_i>{}".format(start_of_today),
-            "hitsPerPage": 30,
-        },
-        timeout=15,
-    )
-    today_resp.raise_for_status()
-    today_hits = today_resp.json().get("hits", [])
 
-    # Merge & dedup by objectID
-    merged = {}
-    for h in front_hits + today_hits:
-        oid = h.get("objectID", "")
-        if oid not in merged:
-            merged[oid] = h
+# ── 2. Fetch top posts from Reddit JSON API ──────────────────────────────────
 
-    # Sort by points descending
-    sorted_hits = sorted(merged.values(), key=lambda h: h.get("points", 0), reverse=True)
-
-    stories = []
-    for h in sorted_hits:
-        stories.append({
-            "title": h.get("title", ""),
-            "url": h.get("url"),
-            "points": h.get("points", 0),
-            "num_comments": h.get("num_comments", 0),
-            "author": h.get("author", ""),
-            "object_id": h.get("objectID", ""),
-            "story_text": h.get("story_text"),
+def fetch_subreddit(sub: str) -> List[Dict]:
+    url = REDDIT_BASE_URL.format(sub)
+    resp = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=15)
+    resp.raise_for_status()
+    data = resp.json().get("data", {}).get("children", [])
+    posts = []
+    for child in data:
+        p = child.get("data", {})
+        post_id = p.get("id", "")
+        posts.append({
+            "title": p.get("title", ""),
+            "url": p.get("url", ""),
+            "points": p.get("score", 0),
+            "num_comments": p.get("num_comments", 0),
+            "author": p.get("author", ""),
+            "post_id": post_id,
+            "subreddit": p.get("subreddit", sub),
+            "selftext": p.get("selftext", ""),
+            "permalink": p.get("permalink", ""),
+            "is_self": p.get("is_self", False),
         })
-    return stories
+    return posts
 
 
-# ── 2. Extract article content with trafilatura ──────────────────────────────
+def fetch_all_subreddits(subreddits: List[str]) -> List[Dict]:
+    all_posts = []
+    with ThreadPoolExecutor(max_workers=len(subreddits)) as pool:
+        results = pool.map(fetch_subreddit, subreddits)
+        for posts in results:
+            all_posts.extend(posts)
 
-def extract_article(url: str) -> Optional[str]:
-    try:
-        downloaded = trafilatura.fetch_url(url)
-        if downloaded is None:
-            return None
-        text = trafilatura.extract(downloaded)
-        if text and len(text) > MAX_CONTENT_CHARS:
-            text = text[:MAX_CONTENT_CHARS] + "\n[...truncated]"
-        return text
-    except Exception:
-        return None
+    # Dedup by post_id, sort by score descending
+    seen = {}
+    for p in all_posts:
+        pid = p["post_id"]
+        if pid not in seen:
+            seen[pid] = p
+    return sorted(seen.values(), key=lambda p: p.get("points", 0), reverse=True)
 
 
 # ── 3. Build the Claude prompt ────────────────────────────────────────────────
 
 SYSTEM_PROMPT = """\
-Sen bir teknoloji haber analistisin. Aşağıda Hacker News front page'inden hikayeler ve makale içerikleri var.
+Sen bir teknoloji haber analistisin. Aşağıda Reddit'ten gelen postlar var.
 
 Görevin:
-1. Her hikayeyi önem derecesine göre sınıfla: high (Yüksek) / medium (Orta) / low (Düşük)
-2. high ve medium önemdeki hikayelerin 2-3 cümlelik özetini Türkçe yaz (summary alanı)
+1. Her postu önem derecesine göre sınıfla: high (Yüksek) / medium (Orta) / low (Düşük)
+2. high ve medium önemdeki postların 2-3 cümlelik özetini Türkçe yaz (summary alanı)
 3. Aynı özetin İngilizce versiyonunu da yaz (summary_en alanı)
 4. Neden önemli olduğunu Türkçe kısaca açıkla (reason alanı)
 5. Aynı açıklamanın İngilizce versiyonunu da yaz (reason_en alanı)
-6. Hikaye başlığının doğal ve akıcı Türkçe çevirisini yaz (title_tr alanı)
+6. Post başlığının doğal ve akıcı Türkçe çevirisini yaz (title_tr alanı)
 7. low önemdekiler için sadece tek cümle özet yeter (summary, summary_en ve title_tr yeterli)
 
 ÖNEMLI: Türkçe metinlerde ö, ü, ç, ğ, ı, ş gibi Türkçe karakterleri doğru şekilde kullan.
@@ -245,42 +309,35 @@ Görevin:
 - Diğer teknik projeler, kütüphaneler, ilginç hack'ler -> medium
 - Genel haberler, politika, kişisel blog yazıları, niş konular -> low
 
-Her hikaye için object_id'yi aynen döndür. JSON schema'ya uy.""".strip()
+Her post için post_id'yi aynen döndür. JSON schema'ya uy.""".strip()
 
 
-def build_prompts(stories: List[Dict]) -> List[str]:
-    # Extract articles in parallel
-    urls = [s["url"] for s in stories if s["url"]]
-    with ThreadPoolExecutor(max_workers=5) as pool:
-        content_map = dict(zip(urls, pool.map(extract_article, urls)))
-
-    chunks = [stories[i:i + CHUNK_SIZE] for i in range(0, len(stories), CHUNK_SIZE)]
+def build_prompts(posts: List[Dict]) -> List[str]:
+    chunks = [posts[i:i + CHUNK_SIZE] for i in range(0, len(posts), CHUNK_SIZE)]
     prompts = []
 
     for chunk in chunks:
         parts = [SYSTEM_PROMPT, "\n---\n"]
 
-        for i, s in enumerate(chunk, 1):
-            hn_link = f"{HN_ITEM_URL}{s['object_id']}"
+        for i, p in enumerate(chunk, 1):
+            permalink = f"https://www.reddit.com{p['permalink']}" if p['permalink'] else ""
             hdr = (
-                f"### Hikaye {i}: {s['title']}\n"
-                f"- object_id: {s['object_id']}\n"
-                f"- URL: {s['url'] or hn_link}\n"
-                f"- HN: {hn_link}\n"
-                f"- Puan: {s['points']} | Yorum: {s['num_comments']} | Yazar: {s['author']}\n"
+                f"### Post {i}: {p['title']}\n"
+                f"- post_id: {p['post_id']}\n"
+                f"- Subreddit: r/{p['subreddit']}\n"
+                f"- URL: {p['url']}\n"
+                f"- Reddit: {permalink}\n"
+                f"- Puan: {p['points']} | Yorum: {p['num_comments']} | Yazar: u/{p['author']}\n"
             )
             parts.append(hdr)
 
-            if s["url"]:
-                content = content_map.get(s["url"])
-                if content:
-                    parts.append(f"Makale icerigi:\n{content}\n")
-                else:
-                    parts.append("(Makale icerigi alinamadi)\n")
-            elif s["story_text"]:
-                parts.append(f"Metin:\n{s['story_text']}\n")
+            if p["selftext"]:
+                text = p["selftext"]
+                if len(text) > MAX_CONTENT_CHARS:
+                    text = text[:MAX_CONTENT_CHARS] + "\n[...truncated]"
+                parts.append(f"Post icerigi:\n{text}\n")
             else:
-                parts.append("(Icerik yok)\n")
+                parts.append("(Link post — icerik yok)\n")
 
             parts.append("")
 
@@ -304,7 +361,7 @@ def run_claude_triage(prompt: str) -> dict:
         ["claude", "-p",
          "--model", "haiku",
          "--output-format", "json",
-         "--json-schema", HN_TRIAGE_SCHEMA,
+         "--json-schema", REDDIT_TRIAGE_SCHEMA,
          "--no-session-persistence"],
         input=prompt,
         capture_output=True,
@@ -325,24 +382,24 @@ def run_parallel_triage(prompts: List[str]) -> List[dict]:
         return list(pool.map(run_claude_triage, prompts))
 
 
-# ── 5. Process Claude response & merge with story metadata ──────────────────
+# ── 5. Process Claude response & merge with post metadata ───────────────────
 
-def process_claude_response(triage_results: List[dict], stories: List[Dict]) -> List[Dict]:
-    story_map = {s["object_id"]: s for s in stories}
+def process_claude_response(triage_results: List[dict], posts: List[Dict]) -> List[Dict]:
+    post_map = {p["post_id"]: p for p in posts}
     items = []
     for result in triage_results:
         for tri in result.get("items", []):
-            oid = tri.get("object_id", "")
-            meta = story_map.get(oid)
+            pid = tri.get("post_id", "")
+            meta = post_map.get(pid)
             if not meta:
                 continue
-            hn_link = f"{HN_ITEM_URL}{oid}"
+            permalink = f"https://www.reddit.com{meta['permalink']}" if meta['permalink'] else meta['url']
             items.append({
                 "digest_date": str(date.today()),
-                "external_id": oid,
+                "external_id": pid,
                 "title": meta["title"],
                 "title_tr": tri.get("title_tr"),
-                "url": meta.get("url") or hn_link,
+                "url": meta.get("url") or permalink,
                 "priority": tri["priority"],
                 "summary": tri.get("summary"),
                 "summary_en": tri.get("summary_en"),
@@ -351,7 +408,8 @@ def process_claude_response(triage_results: List[dict], stories: List[Dict]) -> 
                 "points": meta.get("points"),
                 "num_comments": meta.get("num_comments"),
                 "author": meta.get("author"),
-                "hn_url": hn_link,
+                "subreddit": meta.get("subreddit"),
+                "reddit_url": permalink,
             })
     return items
 
@@ -368,25 +426,29 @@ def main():
 
     # Record run start
     cursor = conn.execute(
-        "INSERT INTO digest_runs (source, status) VALUES ('hn', 'running')"
+        "INSERT INTO digest_runs (source, status) VALUES ('reddit', 'running')"
     )
     run_id = cursor.lastrowid
     conn.commit()
 
     try:
-        print("Fetching HN stories (front page + today)...", file=sys.stderr)
-        stories = fetch_hn_stories()
+        subreddits = load_subreddits()
+        print(f"Fetching Reddit posts from {len(subreddits)} subreddits...", file=sys.stderr)
+        posts = fetch_all_subreddits(subreddits)
 
-        # Dedup via DB — skip stories already in DB
+        # Dedup via DB — skip posts already in DB
         if not show_all:
-            existing = set()
-            for row in conn.execute(
-                "SELECT external_id FROM digest_items WHERE source='hn'"
-            ):
-                existing.add(row[0])
-            selected = [s for s in stories if s["object_id"] not in existing]
+            post_ids = [p["post_id"] for p in posts]
+            placeholders = ",".join("?" * len(post_ids))
+            existing = set(
+                row[0] for row in conn.execute(
+                    f"SELECT external_id FROM digest_items WHERE source='reddit' AND external_id IN ({placeholders})",
+                    post_ids,
+                )
+            )
+            selected = [p for p in posts if p["post_id"] not in existing]
             if not selected:
-                print("Yeni hikaye yok — tum hikayeler daha once kaydedildi.", file=sys.stderr)
+                print("Yeni post yok — tum postlar daha once kaydedildi.", file=sys.stderr)
                 conn.execute(
                     "UPDATE digest_runs SET status='done', finished_at=datetime('now'), items_added=0 WHERE id=?",
                     (run_id,)
@@ -394,16 +456,16 @@ def main():
                 conn.commit()
                 return
         else:
-            selected = stories
+            selected = posts
 
-        print(f"Got {len(selected)} stories. Extracting articles...", file=sys.stderr)
+        print(f"Got {len(selected)} posts. Sending to Claude...", file=sys.stderr)
 
         prompts = build_prompts(selected)
 
         print(f"Sending {len(prompts)} chunk(s) to Claude...", file=sys.stderr)
         triage_results = run_parallel_triage(prompts)
 
-        # Merge triage results with story metadata
+        # Merge triage results with post metadata
         items = process_claude_response(triage_results, selected)
 
         # Write to DB
@@ -415,7 +477,6 @@ def main():
 
         print(f"Done! {added} items written to DB.", file=sys.stderr)
 
-        # Also print markdown summary to stdout for backwards compat
         for item in items:
             badge = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(item["priority"], "⚪")
             pts = item.get("points", 0)

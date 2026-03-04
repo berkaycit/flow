@@ -47,6 +47,7 @@ struct ItemRowView: View {
         switch item.digestSource {
         case .yt: .red.opacity(0.7)
         case .hn: .orange.opacity(0.7)
+        case .reddit: .blue.opacity(0.7)
         }
     }
 }
