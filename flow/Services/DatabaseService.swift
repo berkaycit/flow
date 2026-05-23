@@ -157,6 +157,7 @@ final class DatabaseService: Sendable {
             try DigestItem
                 .filter(DigestItem.CodingKeys.source == source.rawValue)
                 .filter(DigestItem.CodingKeys.digestDate == date)
+                .filter(DigestItem.CodingKeys.priority != "low")
                 .order(sql: Self.priorityOrderSQL)
                 .fetchAll(db)
         }
@@ -243,6 +244,7 @@ final class DatabaseService: Sendable {
             try DigestItem
                 .filter(DigestItem.CodingKeys.source == source.rawValue)
                 .filter(DigestItem.CodingKeys.digestDate == date)
+                .filter(DigestItem.CodingKeys.priority != "low")
                 .order(sql: Self.priorityOrderSQL)
                 .fetchAll(db)
         }

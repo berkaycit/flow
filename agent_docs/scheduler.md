@@ -15,10 +15,14 @@ The app can schedule automatic digest runs via macOS `launchd`. A LaunchAgent pl
 
 ## How It Works
 
-1. **Install** (`install()`): writes `run_digests.sh`, builds a plist dict with `StartCalendarInterval` (array of `{Hour, Minute}` dicts), writes it to `~/Library/LaunchAgents/`, runs `launchctl load`.
+1. **Install** (`install()`): builds a plist dict with `ProgramArguments = ["/bin/bash", <projectDir>/run_digests.sh]` and `StartCalendarInterval` (array of `{Hour, Minute}` dicts), writes it to `~/Library/LaunchAgents/`, runs `launchctl load`.
 2. **Uninstall** (`uninstall()`): runs `launchctl unload`, deletes the plist file.
 3. **Update** (`updateSchedule(with:)`): if currently scheduled, does uninstall then install with new entries.
 4. **Init**: reads the existing plist back on launch (`loadScheduleFromPlist`). Supports both single-dict and array formats for backward compat.
+
+## Project Path Resolution
+
+`projectDir` is computed at runtime from `#filePath` (the compile-time path of `SchedulerService.swift`), walking three directory components up to reach the repo root. This makes the scheduler portable across forks without any per-machine configuration — as long as the app is built from the repo's own Xcode project, it finds `run_digests.sh` relative to itself.
 
 ## Key Paths
 - **Plist**: `~/Library/LaunchAgents/com.berkaycit.flow.digest.plist`

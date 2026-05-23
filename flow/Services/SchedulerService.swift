@@ -35,7 +35,18 @@ final class SchedulerService {
     ]
 
     private let plistLabel = "com.berkaycit.flow.digest"
-    private let projectDir = NSHomeDirectory() + "/flow"
+
+    private var projectDir: String {
+        URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .path(percentEncoded: false)
+    }
+
+    private var runScriptPath: String {
+        projectDir + "/run_digests.sh"
+    }
 
     private var plistURL: URL {
         FileManager.default.homeDirectoryForCurrentUser
@@ -46,15 +57,6 @@ final class SchedulerService {
         if loadScheduleFromPlist() {
             isScheduled = true
         }
-    }
-
-    private var inlineScript: String {
-        """
-        cd "\(projectDir)" && \
-        /usr/bin/python3 python-yt-digest/yt_digest.py & \
-        /usr/bin/python3 python-hn-digest/hn_digest.py & \
-        wait
-        """
     }
 
     private func userPath() -> String {
@@ -77,7 +79,7 @@ final class SchedulerService {
 
         let plist: [String: Any] = [
             "Label": plistLabel,
-            "ProgramArguments": ["/bin/bash", "-c", inlineScript],
+            "ProgramArguments": ["/bin/bash", runScriptPath],
             "StartCalendarInterval": intervals,
             "StandardOutPath": projectDir + "/logs/digest-stdout.log",
             "StandardErrorPath": projectDir + "/logs/digest-stderr.log",
