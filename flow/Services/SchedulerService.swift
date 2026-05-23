@@ -36,17 +36,16 @@ final class SchedulerService {
 
     private let plistLabel = "com.berkaycit.flow.digest"
 
-    private var projectDir: String {
-        URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .path(percentEncoded: false)
-    }
+    private static let projectURL: URL = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
 
-    private var runScriptPath: String {
-        projectDir + "/run_digests.sh"
-    }
+    private var projectDir: String { Self.projectURL.path(percentEncoded: false) }
+    private var runScriptPath: String { Self.projectURL.appending(path: "run_digests.sh").path(percentEncoded: false) }
+    private var logsDir: String { Self.projectURL.appending(path: "logs").path(percentEncoded: false) }
+    private var stdoutLogPath: String { Self.projectURL.appending(path: "logs/digest-stdout.log").path(percentEncoded: false) }
+    private var stderrLogPath: String { Self.projectURL.appending(path: "logs/digest-stderr.log").path(percentEncoded: false) }
 
     private var plistURL: URL {
         FileManager.default.homeDirectoryForCurrentUser
@@ -81,8 +80,8 @@ final class SchedulerService {
             "Label": plistLabel,
             "ProgramArguments": ["/bin/bash", runScriptPath],
             "StartCalendarInterval": intervals,
-            "StandardOutPath": projectDir + "/logs/digest-stdout.log",
-            "StandardErrorPath": projectDir + "/logs/digest-stderr.log",
+            "StandardOutPath": stdoutLogPath,
+            "StandardErrorPath": stderrLogPath,
             "WorkingDirectory": projectDir,
             "EnvironmentVariables": [
                 "PATH": userPath(),
@@ -92,7 +91,7 @@ final class SchedulerService {
         ]
 
         try FileManager.default.createDirectory(
-            atPath: projectDir + "/logs",
+            atPath: logsDir,
             withIntermediateDirectories: true
         )
 
